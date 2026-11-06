@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Data Siswa</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            body { background: white; color: black; }
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans min-h-screen flex flex-col justify-between">
+
+    <!-- APP CONTAINER -->
+    <div id="app">
+        <!-- APP CONTENT WILL BE RENDERED HERE BY JAVASCRIPT -->
+    </div>
+
+    <script>
+        // --- INITIAL DATA STORE (LOCALSTORAGE) ---
+        const defaultUsers = [
+            { id: 1, username: 'admin', password: '123', role: 'Admin' },
+            { id: 2, username: 'guru', password: '123', role: 'Guru' }
+        ];
+
+        const defaultSiswa = [
+            { id: 1, nis: '001', nama: 'Andi Pratama', kelas: 'XII IPA 1', alamat: 'Jl. Merdeka No. 10, Cirebon' },
+            { id: 2, nis: '002', nama: 'Budi Santoso', kelas: 'XII IPA 1', alamat: 'Jl. Pemuda No. 45, Cirebon' },
+            { id: 3, nis: '003', nama: 'Citra Lestari', kelas: 'XII IPS 1', alamat: 'Jl. Siliwangi No. 12, Cirebon' },
+            { id: 4, nis: '004', nama: 'Dewi Anggraini', kelas: 'XII IPS 2', alamat: 'Jl. Kartini No. 88, Cirebon' },
+            { id: 5, nis: '005', nama: 'Eko Setiawan', kelas: 'XII IPA 2', alamat: 'Jl. Sunan Gunung Jati No. 05, Cirebon' }
+        ];
+
+        if (!localStorage.getItem('users')) {
+            localStorage.setItem('users', JSON.stringify(defaultUsers));
+        }
+        if (!localStorage.getItem('siswa')) {
+            localStorage.setItem('siswa', JSON.stringify(defaultSiswa));
+        }
+
+        // --- STATE MANAGEMENT ---
+        let state = {
+            currentUser: JSON.parse(localStorage.getItem('currentUser')) || null,
+            currentView: JSON.parse(localStorage.getItem('currentUser')) ? 'dashboard' : 'login',
+            searchQuery: '',
+            modal: null, // 'add', 'edit', 'detail', 'delete', 'password'
+            selectedSiswa: null,
+            loginError: '',
+            passwordSuccess: '',
+            passwordError: ''
+        };
+
+        function setState(newState) {
+            state = { ...state, ...newState };
+            render();
+        }
+
+        // --- ACTIONS ---
+        function handleLogin(e) {
+            e.preventDefault();
+            const usernameInput = e.target.username.value.trim();
+            const passwordInput = e.target.password.value.trim();
+
+            const users = JSON.parse(localStorage.getItem('users'));
+            const user = users.find(u => u.username === usernameInput && u.password === passwordInput);
+
+            if (user) {
+                localStorage.setItem('currentUser', JSON.stringify(user));
+                setState({ currentUser: user, currentView: 'dashboard', loginError: '' });
+            } else {
+                setState({ loginError: 'Username atau password salah!' });
+            }
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('currentUser');
+            setState({ currentUser: null, currentView: 'login', modal: null });
+        }
+
+        function handleSaveSiswa(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const siswaData = {
+                nis: formData.get('nis'),
+                nama: formData.get('nama'),
+                kelas: formData.get('kelas'),
+                alamat: formData.get('alamat')
+            };
+
+            let list = JSON.parse(localStorage.getItem('siswa'));
+
+            if (state.modal === 'edit' && state.selectedSiswa) {
+                list = list.map(s => s.id === state.selectedSiswa.id ? { ...s, ...siswaData } : s);
+            } else {
+                siswaData.id = Date.now();
+                list.push(siswaData);
+            }
+
+            localStorage.setItem('siswa', JSON.stringify(list));
+            setState({ modal: null, selectedSiswa: null });
+        }
+
+        function handleDeleteSiswa() {
+            let list = JSON.parse(localStorage.getItem('siswa'));
+            list = list.filter(s => s.id !== state.selectedSiswa.id);
+            localStorage.setItem('siswa', JSON.stringify(list));
+            setState({ modal: null, selectedSiswa: null });
+        }
+
+        function handleChangePassword(e) {
+            e.preventDefault();
+            const oldPass = e.target.oldPassword.value;
+            const newPass = e.target.newPassword.value;
+
+            let users = JSON.parse(localStorage.getItem('users'));
+            const userIndex = users.findIndex(u => u.id === state.currentUser.id);
+
+            if (users[userIndex].password !== oldPass) {
+                setState({ passwordError: 'Password lama salah!', passwordSuccess: '' });
+                return;
+            }
+
+            users[userIndex].password = newPass;
+            localStorage.setItem('users', JSON.stringify(users));
+            const updatedUser = users[userIndex];
+            localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+            
+            setState({ 
+                currentUser: updatedUser, 
+                passwordSuccess: 'Password berhasil diubah!', 
+                passwordError: '',
+                modal: null 
+            });
+        }
+
+        // --- RENDER VIEWS ---
+        function render() {
+            const app = document.getElementById('app');
+
+            if (!state.currentUser || state.currentView === 'login') {
+                app.innerHTML = renderLogin();
+                return;
+            }
+
+            app.innerHTML = `
+                <div class="min-h-screen flex flex-col">
+                    <!-- HEADER / NAVBAR -->
+                    <header class="bg-slate-800 border-b border-slate-700 p-4 sticky top-0 z-10 no-print">
+                        <div class="max-w-7xl mx-auto flex justify-between items-center">
+                            <div class="flex items-center space-x-3">
+                                <div class="bg-blue-600 p-2 rounded-lg text-white font-bold">
+                                    <i class="fa-solid fa-graduation-cap text-xl"></i>
+                                </div>
+                                <h1 class="text-xl font-bold text-white tracking-wide">Aplikasi Data Siswa</h1>
+                            </div>
+                            <div class="flex items-center space-x-4">
+                                <span class="text-sm bg-slate-700 px-3 py-1 rounded-full text-slate-300">
+                                    <i class="fa-solid fa-user text-blue-400 mr-1"></i> ${state.currentUser.username} (${state.currentUser.role})
+                                </span>
+                                <button onclick="setState({ modal: 'password' })" class="text-slate-300 hover:text-white text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded-md transition">
+                                    <i class="fa-solid fa-key mr-1"></i> Ganti Password
+                                </button>
+                                <button onclick="handleLogout()" class="bg-rose-600 hover:bg-rose-500 text-white text-sm px-3 py-1 rounded-md transition">
+                                    <i class="fa-solid fa-right-from-bracket mr-1"></i> Logout
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    <!-- NAVIGATION TABS -->
+                    <nav class="bg-slate-800/50 border-b border-slate-700/50 no-print">
+                        <div class="max-w-7xl mx-auto flex space-x-4 px-4">
+                            <button onclick="setState({ currentView: 'dashboard' })" class="py-3 px-4 font-medium text-sm border-b-2 ${state.currentView === 'dashboard' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-200'}">
+                                <i class="fa-solid fa-chart-pie mr-2"></i>Dashboard
+                            </button>
+                            <button onclick="setState({ currentView: 'siswa' })" class="py-3 px-4 font-medium text-sm border-b-2 ${state.currentView === 'siswa' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-200'}">
+                                <i class="fa-solid fa-users mr-2"></i>Data Siswa
+                            </button>
+                        </div>
+                    </nav>
+
+                    <!-- MAIN CONTENT -->
+                    <main class="flex-grow max-w-7xl w-full mx-auto p-4 md:p-6">
+                        ${state.currentView === 'dashboard' ? renderDashboard() : renderDataSiswa()}
+                    </main>
+                </div>
+
+                <!-- MODALS -->
+                ${renderModals()}
+            `;
+        }
+
+        function renderLogin() {
+            return `
+                <div class="min-h-screen flex items-center justify-center p-4 bg-slate-900">
+                    <div class="max-w-md w-full bg-slate-800 rounded-xl shadow-2xl border border-slate-700 p-8 space-y-6">
+                        <div class="text-center space-y-2">
+                            <div class="inline-flex p-3 bg-blue-600/20 text-blue-500 rounded-full mb-2">
+                                <i class="fa-solid fa-graduation-cap text-3xl"></i>
+                            </div>
+                            <h2 class="text-2xl font-bold text-white">LOGIN</h2>
+                            <p class="text-sm text-slate-400">Silakan login untuk melanjutkan</p>
+                        </div>
+
+                        ${state.loginError ? `
+                            <div class="bg-rose-500/10 border border-rose-500 text-rose-400 px-4 py-2 rounded-lg text-sm">
+                                ${state.loginError}
+                            </div>
+                        ` : ''}
+
+                        <form onsubmit="handleLogin(event)" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300 mb-1">Username</label>
+                                <div class="relative">
+                                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                                        <i class="fa-solid fa-user"></i>
+                                    </span>
+                                    <input type="text" name="username" required class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-slate-100 focus:outline-none focus:border-blue-500" placeholder="Masukkan username">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300 mb-1">Password</label>
+                                <div class="relative">
+                                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                                        <i class="fa-solid fa-lock"></i>
+                                    </span>
+                                    <input type="password" name="password" required class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-slate-100 focus:outline-none focus:border-blue-500" placeholder="Masukkan password">
+                                </div>
+                            </div>
+                            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 rounded-lg transition duration-200">
+                                LOGIN
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderDashboard() {
+            const siswa = JSON.parse(localStorage.getItem('siswa'));
+            const totalSiswa = siswa.length;
+            const isAdmin = state.currentUser.role === 'Admin';
+
+            return `
+                <div class="space-y-6">
+                    <div class="bg-slate-800 border border-slate-700 rounded-xl p-6">
+                        <h2 class="text-2xl font-bold text-white mb-1">Halo, ${state.currentUser.username} 👋</h2>
+                        <p class="text-slate-400">Selamat datang di aplikasi data siswa. Anda masuk sebagai <span class="text-blue-400 font-semibold">${state.currentUser.role}</span>.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="bg-slate-800 border border-slate-700 p-6 rounded-xl flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-slate-400">Total Siswa</p>
+                                <p class="text-3xl font-bold text-white mt-2">${totalSiswa}</p>
+                            </div>
+                            <div class="p-3 bg-blue-600/20 text-blue-400 rounded-lg text-2xl">
+                                <i class="fa-solid fa-users"></i>
+                            </div>
+                        </div>
+                        <div class="bg-slate-800 border border-slate-700 p-6 rounded-xl flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-slate-400">Hak Akses</p>
+                                <p class="text-2xl font-bold text-white mt-2">${state.currentUser.role}</p>
+                            </div>
+                            <div class="p-3 bg-emerald-600/20 text-emerald-400 rounded-lg text-2xl">
+                                <i class="fa-solid fa-shield-halved"></i>
+                            </div>
+                        </div>
+                        <div class="bg-slate-800 border border-slate-700 p-6 rounded-xl flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-slate-400">Status Sistem</p>
+                                <p class="text-2xl font-bold text-emerald-400 mt-2">Aktif</p>
+                            </div>
+                            <div class="p-3 bg-indigo-600/20 text-indigo-400 rounded-lg text-2xl">
+                                <i class="fa-solid fa-server"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 space-y-4">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-lg font-bold text-white">Data Siswa Terbaru</h3>
+                            <button onclick="setState({ currentView: 'siswa' })" class="text-sm text-blue-400 hover:text-blue-300">Lihat Semua Data →</button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-sm text-slate-300">
+                                <thead class="bg-slate-700/50 text-slate-200">
+                                    <tr>
+                                        <th class="p-3">NIS</th>
+                                        <th class="p-3">Nama</th>
+                                        <th class="p-3">Kelas</th>
+                                        <th class="p-3">Alamat</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-700">
+                                    ${siswa.slice(0, 5).map(s => `
+                                        <tr>
+                                            <td class="p-3 font-mono">${s.nis}</td>
+                                            <td class="p-3 font-medium text-white">${s.nama}</td>
+                                            <td class="p-3">${s.kelas}</td>
+                                            <td class="p-3">${s.alamat}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderDataSiswa() {
+            const siswa = JSON.parse(localStorage.getItem('siswa'));
+            const filteredSiswa = siswa.filter(s => 
+                s.nama.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+                s.nis.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+                s.kelas.toLowerCase().includes(state.searchQuery.toLowerCase())
+            );
+
+            const isAdmin = state.currentUser.role === 'Admin';
+
+            return `
+                <div class="space-y-6">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
+                        <div>
+                            <h2 class="text-2xl font-bold text-white">Data Siswa</h2>
+                            <p class="text-sm text-slate-400">Kelola dan lihat data siswa yang terdaftar</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            ${isAdmin ? `
+                                <button onclick="setState({ modal: 'add', selectedSiswa: null })" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                                    <i class="fa-solid fa-plus"></i> Tambah Data
+                                </button>
+                            ` : ''}
+                            <button onclick="window.print()" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                                <i class="fa-solid fa-print"></i> Cetak Laporan
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- SEARCH BAR -->
+                    <div class="bg-slate-800 border border-slate-700 p-4 rounded-xl no-print">
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                            </span>
+                            <input 
+                                type="text" 
+                                value="${state.searchQuery}"
+                                oninput="setState({ searchQuery: this.value })"
+                                placeholder="Cari berdasarkan NIS, Nama, atau Kelas..." 
+                                class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-slate-100 focus:outline-none focus:border-blue-500"
+                            >
+                        </div>
+                    </div>
+
+                    <!-- PRINT TITLE -->
+                    <div class="hidden print-only text-center mb-6">
+                        <h1 class="text-2xl font-bold text-black">LAPORAN DATA SISWA</h1>
+                        <p class="text-sm text-gray-600">Sistem Informasi Pengelolaan Data Siswa</p>
+                        <hr class="my-4 border-black">
+                    </div>
+
+                    <!-- DATA TABLE -->
+                    <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-sm text-slate-300">
+                                <thead class="bg-slate-700/50 text-slate-200">
+                                    <tr>
+                                        <th class="p-4">No</th>
+                                        <th class="p-4">NIS</th>
+                                        <th class="p-4">Nama Siswa</th>
+                                        <th class="p-4">Kelas</th>
+                                        <th class="p-4">Alamat</th>
+                                        <th class="p-4 text-center no-print">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-700">
+                                    ${filteredSiswa.length > 0 ? filteredSiswa.map((s, idx) => `
+                                        <tr class="hover:bg-slate-700/30 transition">
+                                            <td class="p-4">${idx + 1}</td>
+                                            <td class="p-4 font-mono">${s.nis}</td>
+                                            <td class="p-4 font-medium text-white">${s.nama}</td>
+                                            <td class="p-4">${s.kelas}</td>
+                                            <td class="p-4">${s.alamat}</td>
+                                            <td class="p-4 text-center no-print space-x-2">
+                                                <button onclick="setState({ modal: 'detail', selectedSiswa: ${JSON.stringify(s).replace(/"/g, '&quot;')} })" class="bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/40 p-2 rounded-lg transition" title="Detail">
+                                                    <i class="fa-solid fa-eye"></i>
+                                                </button>
+                                                ${isAdmin ? `
+                                                    <button onclick="setState({ modal: 'edit', selectedSiswa: ${JSON.stringify(s).replace(/"/g, '&quot;')} })" class="bg-amber-600/20 text-amber-400 hover:bg-amber-600/40 p-2 rounded-lg transition" title="Edit">
+                                                        <i class="fa-solid fa-pen-to-square"></i>
+                                                    </button>
+                                                    <button onclick="setState({ modal: 'delete', selectedSiswa: ${JSON.stringify(s).replace(/"/g, '&quot;')} })" class="bg-rose-600/20 text-rose-400 hover:bg-rose-600/40 p-2 rounded-lg transition" title="Hapus">
+                                                        <i class="fa-solid fa-trash"></i>
+                                                    </button>
+                                                ` : ''}
+                                            </td>
+                                        </tr>
+                                    `).join('') : `
+                                        <tr>
+                                            <td colspan="6" class="p-8 text-center text-slate-500">Data siswa tidak ditemukan.</td>
+                                        </tr>
+                                    `}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderModals() {
+            if (!state.modal) return '';
+
+            const isEdit = state.modal === 'edit';
+            const isAdd = state.modal === 'add';
+            const s = state.selectedSiswa || {};
+
+            if (isAdd || isEdit) {
+                return `
+                    <div class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                        <div class="bg-slate-800 border border-slate-700 rounded-xl max-w-md w-full p-6 space-y-4">
+                            <h3 class="text-xl font-bold text-white">${isEdit ? 'Edit Data Siswa' : 'Tambah Data Siswa'}</h3>
+                            <form onsubmit="handleSaveSiswa(event)" class="space-y-4">
+                                <div>
+                                    <label class="block text-sm text-slate-300 mb-1">NIS</label>
+                                    <input type="text" name="nis" value="${s.nis || ''}" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-slate-300 mb-1">Nama Lengkap</label>
+                                    <input type="text" name="nama" value="${s.nama || ''}" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-slate-300 mb-1">Kelas</label>
+                                    <input type="text" name="kelas" value="${s.kelas || ''}" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-slate-300 mb-1">Alamat</label>
+                                    <textarea name="alamat" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white rows="3">${s.alamat || ''}</textarea>
+                                </div>
+                                <div class="flex justify-end space-x-3 pt-2">
+                                    <button type="button" onclick="setState({ modal: null })" class="px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600">Batal</button>
+                                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500">Simpan</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (state.modal === 'detail') {
+                return `
+                    <div class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                        <div class="bg-slate-800 border border-slate-700 rounded-xl max-w-md w-full p-6 space-y-4">
+                            <h3 class="text-xl font-bold text-white border-b border-slate-700 pb-2">Detail Data Siswa</h3>
+                            <div class="space-y-3">
+                                <div>
+                                    <p class="text-xs text-slate-400">NIS</p>
+                                    <p class="text-slate-100 font-mono font-semibold">${s.nis}</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-slate-400">Nama Siswa</p>
+                                    <p class="text-slate-100 font-semibold">${s.nama}</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-slate-400">Kelas</p>
+                                    <p class="text-slate-100 font-semibold">${s.kelas}</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-slate-400">Alamat</p>
+                                    <p class="text-slate-100">${s.alamat}</p>
+                                </div>
+                            </div>
+                            <div class="flex justify-end pt-4">
+                                <button type="button" onclick="setState({ modal: null })" class="px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600">Tutup</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (state.modal === 'delete') {
+                return `
+                    <div class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                        <div class="bg-slate-800 border border-slate-700 rounded-xl max-w-sm w-full p-6 space-y-4 text-center">
+                            <div class="p-3 bg-rose-600/20 text-rose-500 rounded-full w-12 h-12 flex items-center justify-center mx-auto">
+                                <i class="fa-solid fa-triangle-exclamation text-xl"></i>
+                            </div>
+                            <h3 class="text-lg font-bold text-white">Hapus Data Siswa?</h3>
+                            <p class="text-sm text-slate-400">Apakah Anda yakin ingin menghapus data <strong>${s.nama}</strong>?</p>
+                            <div class="flex justify-center space-x-3 pt-2">
+                                <button type="button" onclick="setState({ modal: null })" class="px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600">Batal</button>
+                                <button type="button" onclick="handleDeleteSiswa()" class="px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-500">Hapus</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (state.modal === 'password') {
+                return `
+                    <div class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                        <div class="bg-slate-800 border border-slate-700 rounded-xl max-w-md w-full p-6 space-y-4">
+                            <h3 class="text-xl font-bold text-white">Ganti Password</h3>
+                            ${state.passwordError ? `<div class="text-rose-400 text-sm bg-rose-500/10 p-2 rounded">${state.passwordError}</div>` : ''}
+                            <form onsubmit="handleChangePassword(event)" class="space-y-4">
+                                <div>
+                                    <label class="block text-sm text-slate-300 mb-1">Password Lama</label>
+                                    <input type="password" name="oldPassword" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-slate-300 mb-1">Password Baru</label>
+                                    <input type="password" name="newPassword" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white">
+                                </div>
+                                <div class="flex justify-end space-x-3 pt-2">
+                                    <button type="button" onclick="setState({ modal: null })" class="px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600">Batal</button>
+                                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500">Update Password</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                `;
+            }
+
+            return '';
+        }
+
+        // INITIAL RENDER
+        render();
+    </script>
+</body>
+</html>
